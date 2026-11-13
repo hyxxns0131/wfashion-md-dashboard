@@ -1,6 +1,6 @@
 /* =========================================================================
    Fashion MD Workspace — 패션 온라인MD 하루 업무 순서대로
-   09:00 아침 체크 → 기획전 운영 → 브랜드 모니터링 → 상품·VOC → 소싱·육성 → 등록 검수 → 주간 리포트
+   09:00 아침 체크 → 기획전 운영 → 브랜드 모니터링 → 상품·VOC → 콘텐츠 제작 → 표현 검수 → 소싱·육성 → 등록 검수 → 성과 분석 → (월) 시장 인사이트 → (금) 주간 리포트
    데이터 원칙: 실제 수집(W컨셉 공개 화면) · 무료 API(Open-Meteo, Nager.Date) · 계산기(입력값)만 사용.
    판매·재고·반품 같은 내부 데이터는 만들어 넣지 않고 '입사 후 연결' 자리로 둡니다.
    ========================================================================= */
@@ -435,7 +435,9 @@
       [`상품 ${PRODUCTS.length}개 구매 리뷰 요약 · 상품정보고시`, "2026-11-13 10:30", "real", "상품 페이지 1회 열람 (Q&A는 robots.txt 차단이라 열지 않음)", "상품 · VOC · 등록 검수"],
       ["서울 14일 날씨 (Open-Meteo)", API.live.weather ? "지금 (실시간)" : API.at, API.live.weather ? "live" : "api", "무료 · 키 없음 · 브라우저에서 직접 호출", "아침 체크 규칙 W1~W3"],
       ["한국 공휴일 (Nager.Date)", API.live.holidays ? "지금 (실시간)" : API.at, API.live.holidays ? "live" : "api", "무료 · 키 없음 · 브라우저에서 직접 호출", "아침 체크 H1 · 기획전 일정"],
-      ["할인 · 쿠폰 시뮬레이터, 기획전 일정", "—", "calc", "사용자가 넣는 입력값으로 계산", "기획전 운영"]
+      ["할인 · 쿠폰 시뮬레이터, 기획전 일정", "—", "calc", "사용자가 넣는 입력값으로 계산", "기획전 운영"],
+      ["성과 CSV (노출 · 클릭 · 주문 · 매출)", "올린 시점", "calc", "사용자가 올린 사내 데이터 · 브라우저 안에서만 계산 (연습용 가상 데이터는 브랜드 A~F로 표시)", "성과 분석"],
+      ["OpenAI (gpt-4o-mini 기본)", "호출 시점", "calc", "로컬 server.py가 .env 키로 호출 · 키는 브라우저에 없음 · 판단은 규칙, AI는 문장 · 제안만", "콘텐츠 제작 · 표현 검수 · 성과 분석 · 시장 인사이트"]
     ];
     return `<div class="ph"><h2>데이터 출처</h2><div class="when">근거 없는 가상 데이터는 쓰지 않음</div></div>
     <p class="lead">모든 숫자 옆에 출처 표시를 붙였어요. <span class="src real">W컨셉 실제</span> 공개 화면에서 읽은 값 · <span class="src api">무료 API</span> 키 없이 받는 공개 API · <span class="src live">실시간</span> 지금 불러온 값 · <span class="src calc">계산 · 입력값</span> 사용자가 넣은 값으로 계산.</p>
@@ -447,8 +449,8 @@
     <div class="sec"><h3>이 프로젝트</h3></div>
     <div class="grid g3">
       <div class="card"><h4>문제</h4><p style="font-size:13px;margin:0">인턴 때 행사 가격 · 매출 · 할인율을 엑셀 여러 장으로 관리하면서, '오늘 무엇부터 해야 하는지'를 정하는 데 시간이 걸렸어요. 근거도 화면마다 흩어져 있었어요.</p></div>
-      <div class="card"><h4>해결</h4><p style="font-size:13px;margin:0">MD의 하루 순서(아침 체크 → 기획전 → 브랜드 → VOC → 소싱 → 검수 → 리포트)대로 화면을 만들고, 실제 공개 데이터와 무료 API에 규칙 ${Object.keys(RULE_TXT).length}개를 붙여 할 일을 근거와 함께 자동으로 뽑았어요.</p></div>
-      <div class="card"><h4>AI가 한 일 / 내가 한 일</h4><p style="font-size:13px;margin:0"><b>AI</b> MediaPipe 사진 분류 · 대표 컬러, Claude 코드 작성 보조<br><b>나</b> 업무 흐름 설계, 규칙 · 지표 정의(리뷰 증가 = 판매 신호, 사이즈 30% 기준, 24H 효과), 수집 원칙 결정</p></div>
+      <div class="card"><h4>해결</h4><p style="font-size:13px;margin:0">MD의 하루 순서(아침 체크 → 기획전 → 브랜드 → VOC → 콘텐츠 → 표현 검수 → 소싱 → 등록 검수 → 성과 → 인사이트 → 리포트)대로 화면을 만들고, 실제 공개 데이터와 무료 API에 규칙 ${Object.keys(RULE_TXT).length}개를 붙여 할 일을 근거와 함께 자동으로 뽑았어요.</p></div>
+      <div class="card"><h4>AI가 한 일 / 내가 한 일</h4><p style="font-size:13px;margin:0"><b>AI</b> MediaPipe 사진 분류 · 대표 컬러, OpenAI 콘텐츠 3안 · 표현 2차 검토 · 성과 · 인사이트 요약, Claude 코드 작성 보조<br><b>나</b> 업무 흐름 설계, 규칙 · 지표 정의(리뷰 증가 = 판매 신호, 사이즈 30% 기준, 24H 효과), 수집 원칙 결정</p></div>
     </div>`;
   }
 
@@ -458,7 +460,15 @@
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
 
   /* ---------------- 셸 ---------------- */
-  const VIEWS = { morning: ["아침 체크", vMorning, afterMorning], promo: ["기획전 운영", vPromo, afterPromo], brands: ["브랜드 모니터링", vBrands, afterBrands], voc: ["상품 · VOC", vVoc, afterVoc], sourcing: ["소싱 · 육성", vSourcing, afterSourcing], register: ["등록 검수", vRegister, afterRegister], report: ["주간 리포트", vReport, afterReport], sources: ["데이터 출처", vSources, () => { }] };
+  const BASE = [["morning", ["아침 체크", vMorning, afterMorning]], ["promo", ["기획전 운영", vPromo, afterPromo]], ["brands", ["브랜드 모니터링", vBrands, afterBrands]], ["voc", ["상품 · VOC", vVoc, afterVoc]], ["sourcing", ["소싱 · 육성", vSourcing, afterSourcing]], ["register", ["등록 검수", vRegister, afterRegister]], ["report", ["주간 리포트", vReport, afterReport]], ["sources", ["데이터 출처", vSources, () => { }]]];
+  const TIMES = { morning: "09:00", promo: "10:00", brands: "11:00", voc: "13:00", sourcing: "15:00", register: "16:00", report: "금 17:00" };
+  // AX 탭 (assets/ax.js): 콘텐츠 제작 · 표현 검수 · 성과 분석 · 시장 인사이트
+  if (window.FMD_EXT) {
+    const LVT_ = { "통과": "green", "참고": "green", "확인 필요": "blue", "수정 요청": "amber", "등록 불가": "red" };
+    const ext = window.FMD_EXT({ $, $$, esc, fmt, pct, md, TODAY, addD, toast, copy, src, table, store, save, chart, M, SNAP, L, P, CATS, scoreOf, EVENTS, exclBrands, PRODUCTS, revDelta, API, wxDays, evType, LVT: LVT_, rerender: () => { if (document.getElementById("view")) render(); } });
+    ext.forEach(x => { const i = BASE.findIndex(b => b[0] === x.after); BASE.splice(i + 1, 0, [x.id, [x.label, x.view, x.bind]]); TIMES[x.id] = x.time; });
+  }
+  const VIEWS = Object.fromEntries(BASE);
   const IC = { search: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>', expand: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>', mail: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>', db: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>', print: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V3h12v6M6 18H4v-6h16v6h-2M8 14h8v7H8z"/></svg>', book: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12v18l-6-4-6 4z"/></svg>' };
   function shell() {
     document.getElementById("app").innerHTML = `
@@ -467,9 +477,9 @@
         <span class="chip"><i>강</i>강현서</span><span class="chip hide-m"><i>W</i>온라인MD · 패션</span><span class="chip hide-m"><i>◷</i>${TODAY.replace(/-/g, ".")}</span></div>
       <div class="canvas">
         <button class="expand" title="새 창에서 크게 보기" onclick="document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(()=>{})">${IC.expand}</button>
-        <div class="hero"><div class="lines"></div><h1>fashion md.<small>daily workflow</small></h1>
-          <p class="sub">패션 온라인MD의 하루 업무 순서대로 만든 대시보드 · W컨셉 공개 데이터와 무료 API만 사용</p>
-          <nav class="tags" id="nav">${Object.entries(VIEWS).map(([k, v]) => `<a class="tag-nav" href="#${k}" data-v="${k}">${v[0]}${k === "morning" ? ` <span class="n">${TODOS.filter(t => t.g === "긴급").length}</span>` : ""}</a>`).join("")}</nav></div>
+        <div class="hero"><div class="title"><div class="lines"></div><h1>fashion md.<small>daily workflow</small></h1></div>
+          <p class="sub">패션 온라인MD의 하루 업무 순서대로 만든 대시보드 · W컨셉 공개 데이터와 무료 API만 사용</p></div>
+        <nav class="tags" id="nav" aria-label="업무 순서">${Object.entries(VIEWS).map(([k, v], i) => `<a class="tag-nav" href="#${k}" data-v="${k}"><span class="tm">${TIMES[k] || "참고"}</span>${v[0]}${k === "morning" ? `<span class="n">${TODOS.filter(t => t.g === "긴급").length}</span>` : ""}</a>`).join('<span class="arrow" aria-hidden="true">›</span>')}</nav>
         <section class="view" id="view"></section>
       </div>
       <div class="foot"><span>${IC.db} W컨셉 베스트 ${esc(L.at)} · 날씨 · 공휴일 무료 API</span><span>${IC.mail} 강현서 · 온라인MD 지원 포트폴리오</span><div class="r"><button title="인쇄 · PDF" onclick="window.print()">${IC.print}</button><button title="데이터 출처" onclick="location.hash='sources'">${IC.book}</button></div></div>
@@ -485,7 +495,7 @@
     document.addEventListener("click", e => { if (!e.target.closest(".q")) qr.hidden = true; });
   }
   const cur = () => { const h = (location.hash || "").slice(1); return VIEWS[h] ? h : "morning"; };
-  function render() { const id = cur(); $$("#nav a").forEach(a => a.classList.toggle("on", a.dataset.v === id)); $("#view").innerHTML = VIEWS[id][1](); VIEWS[id][2](); document.title = VIEWS[id][0] + " · fashion md."; }
+  function render() { const id = cur(); $$("#nav a").forEach(a => a.classList.toggle("on", a.dataset.v === id)); const on = $("#nav a.on"); if (on && on.scrollIntoView) on.scrollIntoView({ block: "nearest", inline: "nearest" }); $("#view").innerHTML = VIEWS[id][1](); VIEWS[id][2](); document.title = VIEWS[id][0] + " · fashion md."; }
   window.addEventListener("hashchange", () => { closeDrawer(); render(); });
   shell(); render(); loadLive();
 })();
