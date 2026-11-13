@@ -57,8 +57,8 @@
     } catch (e) { }
     if (API.live.weather || API.live.holidays) { TODOS = buildTodos(); render(); }
   }
-  const wxSrc = () => API.live.weather ? src("live", "Open-Meteo") : src("api", "Open-Meteo · " + API.at + " 스냅샷");
-  const hoSrc = () => API.live.holidays ? src("live", "Nager.Date") : src("api", "Nager.Date · 스냅샷");
+  const wxSrc = () => API.kma ? src("live", "기상청 단기예보 " + API.kma + " + Open-Meteo") : API.live.weather ? src("live", "Open-Meteo") : src("api", "Open-Meteo · " + API.at + " 스냅샷");
+  const hoSrc = () => API.kasi ? src("live", "한국천문연구원 특일 정보") : API.live.holidays ? src("live", "Nager.Date") : src("api", "Nager.Date · 스냅샷");
   function wxDays() { const d = API.weather.daily; return d.time.map((t, i) => ({ date: t, max: d.temperature_2m_max[i], min: d.temperature_2m_min[i], rain: d.precipitation_probability_max[i], code: d.weather_code[i] })).filter(x => x.date >= TODAY); }
   const WX_ICON = c => c === 0 ? "☀︎" : c <= 3 ? "☁︎" : c <= 67 || (c >= 80 && c <= 82) ? "☂︎" : c <= 86 ? "❄︎" : "☁︎";
 
@@ -433,8 +433,11 @@
       ["W컨셉 메인 기획전 배너 67개", M.eventsMeta.at, "real", "우먼 메인 1회 열람", "기획전 운영 · 아침 체크"],
       ["W컨셉 단독 · 신상 페이지", "2026-11-12 12:20", "real", "단독 · 신상 화면 1회 열람", "소싱 · 육성"],
       [`상품 ${PRODUCTS.length}개 구매 리뷰 요약 · 상품정보고시`, "2026-11-13 10:30", "real", "상품 페이지 1회 열람 (Q&A는 robots.txt 차단이라 열지 않음)", "상품 · VOC · 등록 검수"],
-      ["서울 14일 날씨 (Open-Meteo)", API.live.weather ? "지금 (실시간)" : API.at, API.live.weather ? "live" : "api", "무료 · 키 없음 · 브라우저에서 직접 호출", "아침 체크 규칙 W1~W3"],
-      ["한국 공휴일 (Nager.Date)", API.live.holidays ? "지금 (실시간)" : API.at, API.live.holidays ? "live" : "api", "무료 · 키 없음 · 브라우저에서 직접 호출", "아침 체크 H1 · 기획전 일정"],
+      ["서울 14일 날씨 (Open-Meteo · 기상청 단기예보)", API.kma ? "기상청 " + API.kma : API.live.weather ? "지금 (실시간)" : API.at, API.live.weather || API.kma ? "live" : "api", "Open-Meteo 키 없음 · 기상청은 공공데이터포털 키로 앞 3일 덮어씀", "아침 체크 규칙 W1~W3"],
+      ["한국 공휴일 (Nager.Date · 한국천문연구원 특일)", API.kasi ? "특일 정보 (실시간)" : API.live.holidays ? "지금 (실시간)" : API.at, API.live.holidays || API.kasi ? "live" : "api", "Nager.Date 키 없음 · 특일 정보는 공공데이터포털 키 (대체공휴일 포함)", "아침 체크 H1 · 기획전 일정"],
+      ["의류 · 신발 소비자물가 (한국은행 ECOS)", "월간 · 2026년 10월분까지", "api", "sample 키로 받음 · 내 키를 넣으면 제한 해제", "시장 인사이트 · 시장 변화"],
+      ["온라인쇼핑 패션 상품군 거래액 (KOSIS)", "월간", "api", "KOSIS 키 필요 · 로컬 서버에서 호출", "시장 인사이트 · 시장 변화"],
+      ["브랜드 유튜브 영상 (YouTube Data API)", "요청 시", "api", "Google Cloud 키 · 하루 10,000 units 무료", "시장 인사이트 · 주간 리뷰"],
       ["할인 · 쿠폰 시뮬레이터, 기획전 일정", "—", "calc", "사용자가 넣는 입력값으로 계산", "기획전 운영"],
       ["성과 CSV (노출 · 클릭 · 주문 · 매출)", "올린 시점", "calc", "사용자가 올린 사내 데이터 · 브라우저 안에서만 계산 (연습용 가상 데이터는 브랜드 A~F로 표시)", "성과 분석"],
       ["OpenAI (gpt-4o-mini 기본)", "호출 시점", "calc", "로컬 server.py가 .env 키로 호출 · 키는 브라우저에 없음 · 판단은 규칙, AI는 문장 · 제안만", "콘텐츠 제작 · 표현 검수 · 성과 분석 · 시장 인사이트"]
@@ -460,12 +463,13 @@
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
 
   /* ---------------- 셸 ---------------- */
-  const BASE = [["morning", ["아침 체크", vMorning, afterMorning]], ["promo", ["기획전 운영", vPromo, afterPromo]], ["brands", ["브랜드 모니터링", vBrands, afterBrands]], ["voc", ["상품 · VOC", vVoc, afterVoc]], ["sourcing", ["소싱 · 육성", vSourcing, afterSourcing]], ["register", ["등록 검수", vRegister, afterRegister]], ["report", ["주간 리포트", vReport, afterReport]], ["sources", ["데이터 출처", vSources, () => { }]]];
+  const HOOKS = {};
+  const BASE = [["morning", ["아침 체크", vMorning, afterMorning]], ["promo", ["기획전 운영", vPromo, afterPromo]], ["brands", ["브랜드 모니터링", vBrands, afterBrands]], ["voc", ["상품 · VOC", vVoc, afterVoc]], ["sourcing", ["소싱 · 육성", vSourcing, afterSourcing]], ["register", ["등록 검수", vRegister, afterRegister]], ["report", ["주간 리포트", vReport, afterReport]], ["sources", ["데이터 출처", () => (HOOKS.sourcesHead ? HOOKS.sourcesHead() : "") + vSources(), () => { if (HOOKS.sourcesBind) HOOKS.sourcesBind(); }]]];
   const TIMES = { morning: "09:00", promo: "10:00", brands: "11:00", voc: "13:00", sourcing: "15:00", register: "16:00", report: "금 17:00" };
   // AX 탭 (assets/ax.js): 콘텐츠 제작 · 표현 검수 · 성과 분석 · 시장 인사이트
   if (window.FMD_EXT) {
     const LVT_ = { "통과": "green", "참고": "green", "확인 필요": "blue", "수정 요청": "amber", "등록 불가": "red" };
-    const ext = window.FMD_EXT({ $, $$, esc, fmt, pct, md, TODAY, addD, toast, copy, src, table, store, save, chart, M, SNAP, L, P, CATS, scoreOf, EVENTS, exclBrands, PRODUCTS, revDelta, API, wxDays, evType, LVT: LVT_, rerender: () => { if (document.getElementById("view")) render(); } });
+    const ext = window.FMD_EXT({ hooks: HOOKS, refreshLive: () => { TODOS = buildTodos(); if (document.getElementById("view")) render(); }, S, $, $$, esc, fmt, pct, md, TODAY, addD, toast, copy, src, table, store, save, chart, M, SNAP, L, P, CATS, scoreOf, EVENTS, exclBrands, PRODUCTS, revDelta, API, wxDays, evType, LVT: LVT_, rerender: () => { if (document.getElementById("view")) render(); } });
     ext.forEach(x => { const i = BASE.findIndex(b => b[0] === x.after); BASE.splice(i + 1, 0, [x.id, [x.label, x.view, x.bind]]); TIMES[x.id] = x.time; });
   }
   const VIEWS = Object.fromEntries(BASE);

@@ -6,9 +6,13 @@
 - 내 컴퓨터(127.0.0.1)에서만 열립니다. 외부에 공개하지 마세요.
 - 표준 라이브러리만 씁니다 (pip 설치 불필요).
 """
+import datetime as dt
 import json
 import os
 import re
+import threading
+import time
+import urllib.parse
 import urllib.error
 import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -164,6 +168,293 @@ def call_openai(body):
     return 200, data
 
 
+# ───────── 무료 공공 API (키는 .env) · 연결 상태 확인 ─────────
+KST = dt.timezone(dt.timedelta(hours=9))
+_cache, _lock = {}, threading.Lock()
+
+
+def env(k):
+    return load_env().get(k) or os.environ.get(k, "")
+
+
+def cached(name, ttl, fn):
+    now = time.time()
+    with _lock:
+        hit = _cache.get(name)
+        if hit and now - hit[0] < ttl:
+            return hit[1]
+    val = fn()
+    with _lock:
+        _cache[name] = (now, val)
+    return val
+
+
+def http_json(url, timeout=12, headers=None):
+    req = urllib.request.Request(url, headers=headers or {"User-Agent": "fashion-md-dashboard/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        raw = r.read().decode("utf-8", "replace")
+    try:
+        return json.loads(raw)
+    except ValueError:
+        # data.go.kr 은 키 오류를 XML 로 돌려줌
+        m = re.search(r"<returnAuthMsg>([^<]+)", raw) or re.search(r"<errMsg>([^<]+)", raw)
+        raise RuntimeError(m.group(1) if m else "JSON 이 아닌 응답")
+
+
+def svc_key(k):
+    """공공데이터포털 키: Encoding 키(%포함)는 그대로, Decoding 키는 인코딩."""
+    return k if "%" in k else urllib.parse.quote(k, safe="")
+
+
+def kma_base(now):
+    slots = [2, 5, 8, 11, 14, 17, 20, 23]
+    t = now - dt.timedelta(minutes=15)
+    past = [h for h in slots if h <= t.hour]
+    if not past:
+        t = t - dt.timedelta(days=1)
+        return t.strftime("%Y%m%d"), "2300"
+    return t.strftime("%Y%m%d"), f"{past[-1]:02d}00"
+
+
+def kma_fetch(rows=1000):
+    k = env("DATA_GO_KR_KEY")
+    if not k:
+        raise KeyError
+    # 하루 02시 발표분을 쓰면 오늘 최저 · 최고(TMN · TMX)가 들어 있음
+    now = dt.datetime.now(KST)
+    if rows > 1:
+        d = now if now.hour * 60 + now.minute >= 2 * 60 + 15 else now - dt.timedelta(days=1)
+        bd, bt = (d.strftime("%Y%m%d"), "0200") if d.date() == now.date() else kma_base(now)
+    else:
+        bd, bt = kma_base(now)
+    url = ("https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=" + svc_key(k) +
+           f"&dataType=JSON&numOfRows={rows}&pageNo=1&base_date={bd}&base_time={bt}&nx=60&ny=127")
+    j = http_json(url)
+    h = j.get("response", {}).get("header", {})
+    if h.get("resultCode") not in ("00", None):
+        raise RuntimeError(h.get("resultMsg") or "기상청 응답 오류")
+    items = j["response"]["body"]["items"]["item"]
+    days = {}
+    for it in items:
+        d = days.setdefault(it["fcstDate"], {"tmn": None, "tmx": None, "pop": 0, "t": []})
+        v = it["fcstValue"]
+        if it["category"] == "TMN":
+            d["tmn"] = float(v)
+        elif it["category"] == "TMX":
+            d["tmx"] = float(v)
+        elif it["category"] == "POP":
+            d["pop"] = max(d["pop"], int(v))
+        elif it["category"] == "TMP":
+            d["t"].append(float(v))
+    out = []
+    for k2 in sorted(days):
+        d = days[k2]
+        mn = d["tmn"] if d["tmn"] is not None else (min(d["t"]) if d["t"] else None)
+        mx = d["tmx"] if d["tmx"] is not None else (max(d["t"]) if d["t"] else None)
+        out.append({"date": f"{k2[:4]}-{k2[4:6]}-{k2[6:]}", "min": mn, "max": mx, "rain": d["pop"]})
+    return {"base": f"{bd} {bt}", "days": out, "area": "서울 (격자 60,127)"}
+
+
+def kasi_fetch(year):
+    k = env("DATA_GO_KR_KEY")
+    if not k:
+        raise KeyError
+    url = ("https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo?serviceKey=" + svc_key(k) +
+           f"&solYear={year}&numOfRows=100&_type=json")
+    j = http_json(url)
+    body = j.get("response", {}).get("body", {})
+    if not body:
+        raise RuntimeError(j.get("response", {}).get("header", {}).get("resultMsg") or "특일 정보 응답 오류")
+    items = (body.get("items") or {})
+    items = items.get("item", []) if isinstance(items, dict) else []
+    if isinstance(items, dict):
+        items = [items]
+    return [{"date": f"{str(x['locdate'])[:4]}-{str(x['locdate'])[4:6]}-{str(x['locdate'])[6:]}", "name": x["dateName"]}
+            for x in items if x.get("isHoliday") == "Y"]
+
+
+ECOS_ITEMS = [("C", "의류 및 신발"), ("C012", "여자의류"), ("C02", "신발"), ("0", "총지수")]
+
+
+def ecos_fetch():
+    k = env("ECOS_API_KEY") or "sample"   # sample: 가입 없이 쓰는 한국은행 시험용 키 (한 번에 10행)
+    now = dt.datetime.now(KST)
+    end = now.replace(day=1) - dt.timedelta(days=1)
+    def ym(d, back):
+        y, m = d.year, d.month - back
+        while m <= 0:
+            y, m = y - 1, m + 12
+        return f"{y}{m:02d}"
+    series = {}
+    for code, name in ECOS_ITEMS:
+        rows = []
+        for a, b in ((ym(end, 21), ym(end, 12)), (ym(end, 9), ym(end, 0))):
+            j = http_json(f"https://ecos.bok.or.kr/api/StatisticSearch/{k}/json/kr/1/10/901Y009/M/{a}/{b}/{code}")
+            if "RESULT" in j and "StatisticSearch" not in j:
+                if j["RESULT"].get("CODE") == "INFO-200":
+                    continue
+                raise RuntimeError(j["RESULT"].get("MESSAGE", "ECOS 오류"))
+            rows += [(r["TIME"], float(r["DATA_VALUE"])) for r in j["StatisticSearch"]["row"]]
+        series[name] = dict(rows)
+    out = {}
+    for name, d in series.items():
+        pts = []
+        for t in sorted(d):
+            prev = f"{int(t[:4]) - 1}{t[4:]}"
+            pts.append({"m": t, "v": d[t], "yoy": round((d[t] / d[prev] - 1) * 100, 1) if prev in d else None})
+        out[name] = [p for p in pts if p["yoy"] is not None]
+    return {"sample": k == "sample", "unit": "2020=100", "series": out}
+
+
+KOSIS_FASHION = ("의복", "신발", "가방", "패션용품 및 액세서리", "화장품")
+
+
+def kosis_fetch():
+    k = env("KOSIS_API_KEY")
+    if not k:
+        raise KeyError
+    tbl = env("KOSIS_TBL_ID") or "DT_1KE10041"   # 국가데이터처 온라인쇼핑동향 · 상품군별 온라인쇼핑 거래액
+    base = ("https://kosis.kr/openapi/Param/statisticsParameterData.do?method=getList&apiKey=" + urllib.parse.quote(k) +
+            f"&orgId=101&tblId={tbl}&itmId=ALL&objL1=ALL&format=json&jsonVD=Y&prdSe=M&newEstPrdCnt=14")
+    j = None
+    for extra in ("&objL2=ALL", ""):
+        j = http_json(base + extra, timeout=20)
+        if isinstance(j, list):
+            break
+    if not isinstance(j, list):
+        raise RuntimeError((j or {}).get("errMsg") or "KOSIS 응답 오류 (.env 의 KOSIS_TBL_ID 확인)")
+    rows = {}
+    for r in j:
+        cat = (r.get("C1_NM") or "").strip()
+        if cat not in KOSIS_FASHION:
+            continue
+        c2 = (r.get("C2_NM") or "").strip()
+        if c2 and c2 not in ("계", "합계", "전체"):
+            continue
+        itm = r.get("ITM_NM") or ""
+        if itm and not re.search(r"거래액|계", itm):
+            continue
+        rows.setdefault(cat, {})[r["PRD_DE"]] = float(str(r["DT"]).replace(",", "") or 0)
+    if not rows:
+        raise RuntimeError(f"표 {tbl} 에서 패션 상품군을 찾지 못했어요 (.env 의 KOSIS_TBL_ID 확인)")
+    unit = j[0].get("UNIT_NM") or "백만원"
+    return {"tbl": tbl, "unit": unit, "table": j[0].get("TBL_NM", ""),
+            "series": {c: [{"m": m, "v": v} for m, v in sorted(d.items())] for c, d in rows.items()}}
+
+
+def youtube_fetch(q):
+    k = env("YOUTUBE_API_KEY")
+    if not k:
+        raise KeyError
+    after = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    url = ("https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=5&regionCode=KR&relevanceLanguage=ko"
+           f"&order=viewCount&publishedAfter={after}&q={urllib.parse.quote(q + ' 코디')}&key={urllib.parse.quote(k)}")
+    j = http_json(url)
+    if "error" in j:
+        raise RuntimeError(j["error"].get("message", "YouTube 오류"))
+    return {"q": q, "total": j.get("pageInfo", {}).get("totalResults"),
+            "items": [{"title": x["snippet"]["title"], "channel": x["snippet"]["channelTitle"],
+                       "id": x["id"]["videoId"], "at": x["snippet"]["publishedAt"][:10]} for x in j.get("items", [])]}
+
+
+def check(fn):
+    t0 = time.time()
+    try:
+        info = fn()
+        return {"state": "ok", "ms": int((time.time() - t0) * 1000), "msg": info or "정상"}
+    except KeyError:
+        return {"state": "nokey", "ms": None, "msg": ".env 에 키가 없어요"}
+    except urllib.error.HTTPError as e:
+        return {"state": "error", "ms": int((time.time() - t0) * 1000), "msg": f"HTTP {e.code}"}
+    except Exception as e:
+        return {"state": "error", "ms": int((time.time() - t0) * 1000), "msg": str(e)[:160]}
+
+
+def chk_openai():
+    if not key():
+        raise KeyError
+    req = urllib.request.Request("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {key()}"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            r.read(200)
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("키가 올바르지 않아요" if e.code == 401 else f"HTTP {e.code}")
+    return f"모델 {model()}"
+
+
+def chk_kma():
+    d = kma_fetch(rows=1)
+    return f"발표 {d['base']}"
+
+
+def chk_kasi():
+    return f"{dt.datetime.now(KST).year}년 공휴일 {len(kasi_fetch(dt.datetime.now(KST).year))}일"
+
+
+def chk_ecos():
+    k = env("ECOS_API_KEY") or "sample"
+    j = http_json(f"https://ecos.bok.or.kr/api/StatisticSearch/{k}/json/kr/1/1/901Y009/M/202601/202601/C")
+    if "StatisticSearch" not in j:
+        raise RuntimeError(j.get("RESULT", {}).get("MESSAGE", "ECOS 오류"))
+    return "샘플 키로 연결 (내 키를 넣으면 제한 해제)" if k == "sample" else "내 키로 연결"
+
+
+def chk_kosis():
+    k = env("KOSIS_API_KEY")
+    if not k:
+        raise KeyError
+    j = http_json("https://kosis.kr/openapi/statisticsSearch.do?method=getList&apiKey=" + urllib.parse.quote(k) +
+                  "&searchNm=" + urllib.parse.quote("온라인쇼핑") + "&orgId=101&format=json&jsonVD=Y&startCount=1&resultCount=1")
+    if isinstance(j, dict) and j.get("err"):
+        raise RuntimeError(j.get("errMsg", "KOSIS 오류"))
+    return "통합검색 응답 정상"
+
+
+def chk_youtube():
+    k = env("YOUTUBE_API_KEY")
+    if not k:
+        raise KeyError
+    j = http_json("https://www.googleapis.com/youtube/v3/videos?part=id&chart=mostPopular&maxResults=1&regionCode=KR&key=" + urllib.parse.quote(k))
+    if "error" in j:
+        raise RuntimeError(j["error"].get("message", "YouTube 오류")[:120])
+    return "1 unit 사용 (하루 10,000 units 무료)"
+
+
+CHECKS = {"openai": chk_openai, "kma": chk_kma, "kasi": chk_kasi, "ecos": chk_ecos, "kosis": chk_kosis, "youtube": chk_youtube}
+
+
+def status_all(force=False):
+    out, threads = {}, []
+    def run(n, f):
+        out[n] = dict(check(f), at=dt.datetime.now(KST).strftime("%H:%M:%S"))
+    for n, f in CHECKS.items():
+        if not force:
+            with _lock:
+                hit = _cache.get("st:" + n)
+            if hit and time.time() - hit[0] < 55:
+                out[n] = hit[1]
+                continue
+        th = threading.Thread(target=run, args=(n, f))
+        th.start()
+        threads.append(th)
+    for th in threads:
+        th.join(15)
+    with _lock:
+        for n, v in out.items():
+            _cache["st:" + n] = (time.time(), v)
+    return out
+
+
+DATA = {
+    "kma": (1800, lambda q: kma_fetch()),
+    "holidays": (86400, lambda q: {"year": q.get("year", [str(dt.datetime.now(KST).year)])[0],
+                                   "items": kasi_fetch(int(q.get("year", [dt.datetime.now(KST).year])[0]))}),
+    "ecos": (43200, lambda q: ecos_fetch()),
+    "kosis": (43200, lambda q: kosis_fetch()),
+    "youtube": (43200, lambda q: youtube_fetch(q.get("q", [""])[0][:40])),
+}
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=ROOT, **kw)
@@ -177,6 +468,23 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(b)
 
     def do_GET(self):
+        if self.path.startswith("/api/status"):
+            return self._json(200, {"at": dt.datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"),
+                                    "checks": status_all(force="force=1" in self.path)})
+        if self.path.startswith("/api/data/"):
+            u = urllib.parse.urlparse(self.path)
+            name, q = u.path.rsplit("/", 1)[-1], urllib.parse.parse_qs(u.query)
+            if name not in DATA:
+                return self._json(404, {"error": "not found"})
+            ttl, fn = DATA[name]
+            if name == "youtube" and not q.get("q", [""])[0].strip():
+                return self._json(400, {"error": "검색어가 필요해요"})
+            try:
+                return self._json(200, cached(name + ":" + u.query, ttl, lambda: fn(q)))
+            except KeyError:
+                return self._json(503, {"error": "키 없음"})
+            except Exception as e:
+                return self._json(502, {"error": str(e)[:200]})
         if self.path.startswith("/api/health"):
             return self._json(200, {"ok": True, "ai": bool(key()), "model": model(), "prompt_version": PROMPT_VERSION})
         # .env · 서버 코드 같은 파일은 내보내지 않음
@@ -203,5 +511,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"fashion md. → http://{HOST}:{PORT}   (AI {'연결됨 · ' + model() if key() else '꺼짐 — .env 에 OPENAI_API_KEY 필요'})")
+    print(f"fashion md. → http://{HOST}:{PORT}")
+    for n, v in status_all(force=True).items():
+        print(f"  {n:8s} {v['state']:6s} {v['msg']}")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

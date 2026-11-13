@@ -8,7 +8,7 @@
 (function () {
   "use strict";
   window.FMD_EXT = function (X) {
-    const { $, $$, esc, fmt, pct, md, TODAY, addD, toast, copy, src, table, store, save, chart, M, SNAP, L, P, CATS, scoreOf, EVENTS, exclBrands, PRODUCTS, revDelta, API, wxDays, evType, LVT, rerender } = X;
+    const { hooks, refreshLive, S, $, $$, esc, fmt, pct, md, TODAY, addD, toast, copy, src, table, store, save, chart, M, SNAP, L, P, CATS, scoreOf, EVENTS, exclBrands, PRODUCTS, revDelta, API, wxDays, evType, LVT, rerender } = X;
     const LV = { "통과": 0, "참고": 0, "확인 필요": 1, "수정 요청": 2, "등록 불가": 3 };
     const worst = H => H.reduce((a, h) => LV[h.lv] > LV[a] ? h.lv : a, "통과");
     const seg = (id, items, on) => `<div class="seg" id="${id}">${items.map(([k, l]) => `<button class="${on === k ? "on" : ""}" data-k="${k}">${l}</button>`).join("")}</div>`;
@@ -22,7 +22,7 @@
       if (/^https?:$/.test(location.protocol)) {
         try { const r = await fetch("api/health", { cache: "no-store" }); if (r.ok && /json/.test(r.headers.get("content-type") || "")) { const j = await r.json(); if (j && j.ok) { AI.server = true; AI.ai = !!j.ai; AI.model = j.model || ""; } } } catch (e) { }
       }
-      AI.checked = true; rerender();
+      AI.checked = true; rerender(); setTimeout(() => pollStatus(), 0);
     })();
     const aiReady = () => AI.server && AI.ai;
     const aiBadge = () => !AI.checked ? '<span class="aist">AI 연결 확인 중…</span>'
@@ -440,7 +440,7 @@
           <div class="card">${A.map(a => `<div class="act"><span class="t ${GT[a.g]}">${a.g}</span><div><b>${esc(a.t)}</b><div class="why">${esc(a.why)} → <em>${esc(a.do)}</em> ${src(a.s)}</div></div><span class="n">${esc(a.n)}</span></div>`).join("")}</div>
           <div class="card" style="margin-top:12px"><div style="display:flex;gap:8px;align-items:center"><h4 style="margin:0">AI 한 줄 정리</h4>${iAI ? aiMeta(iAI.meta) : ""}<button class="btn ghost" id="iai" style="margin-left:auto" ${aiReady() && !iBusy ? "" : "disabled"}>${iBusy ? "정리 중…" : iAI ? "다시 정리" : "팀 공유용으로 정리"}</button></div>
             ${iErr ? `<p class="note" style="color:var(--red)">${esc(iErr)}</p>` : ""}
-            ${iAI ? `<p style="font-size:15px;font-weight:700;margin:10px 0 6px">${esc(iAI.headline)}</p><ul class="uf">${iAI.lines.map(l => `<li>${esc(l)}</li>`).join("")}</ul><p class="cap">${esc(iAI.caution)}</p><button class="btn ghost" id="icp">복사</button>` : `<p class="cap">규칙 결과(위 목록)와 시장 숫자만 보내 3줄 요약을 받아요.</p>`}</div>`;
+            ${iAI ? `<p style="font-size:15px;font-weight:700;margin:10px 0 6px">${esc(iAI.headline)}</p><ul class="uf">${iAI.lines.map(l => `<li>${esc(l)}</li>`).join("")}</ul><p class="cap">${esc(iAI.caution)}</p><button class="btn ghost" id="icp">복사</button>` : `<p class="cap">규칙 결과(위 목록)와 시장 숫자만 보내 3줄 요약을 받아요.</p>`}</div>` + ytHtml(marketDiff().up.slice(0, 5).map(m => m.b));
       }
       const cats = CATS.map(c => [c, D1.cats[c], D2.cats[c], D3.cats[c]]);
       const arrow = (a, b, unit = "", d = 1) => a == null || b == null ? "—" : `${a}${unit} → <b>${b}${unit}</b> <span class="${b > a ? "up" : b < a ? "down" : ""}">${b > a ? "▲" : b < a ? "▼" : "–"}${Math.abs(b - a).toFixed(d).replace(/\.0$/, "")}</span>`;
@@ -459,21 +459,109 @@
         <div class="grid g2" style="margin-top:12px">
           <div class="card"><h4>메인 기획전 배너 유형 ${src("real", M.eventsMeta.at)}</h4><div class="chart" style="height:200px"><canvas id="ic2"></canvas></div></div>
           <div class="card"><h4>신규 입점 브랜드 ${src("real", "신상 페이지")}</h4><div class="chips">${nb.map(b => `<span class="tbtn ${r3[b] ? "on" : ""}">${esc(b)}${r3[b] ? ` · 베스트 ${r3[b]}위` : ""}</span>`).join("")}</div><p class="cap" style="margin-top:8px">검은 칩 = 이미 베스트 TOP60에 들어온 신규 브랜드 → 육성 우선순위</p></div>
-        </div>`;
+        </div>` + macroHtml();
     }
     function afterInsight() {
       bindSeg("isub", k => { isub = k; rerender(); });
       if (isub === "weekly") {
         const b = $("#iai"); if (b) b.onclick = async () => { iBusy = true; iErr = ""; rerender(); const X = marketDiff(); try { iAI = await aiCall("insight", { data: { week: `${D1.at} ~ ${D3.at}`, actions: weeklyActions().map(a => ({ grade: a.g, title: a.t, evidence: a.why, todo: a.do })), market: { top20_entered: X.entered, top20_left: X.left, rank_up: X.up.slice(0, 5).map(m => `${m.b} ${m.r2}→${m.r3}위`), category_avg_discount: CATS.map(c => `${c} ${D1.cats[c].avgDisc}%→${D3.cats[c].avgDisc}%`) }, limits: "W컨셉 공개 화면 3일치(11/11~11/13) · 판매·재고 미연결" } }); store.insAI = iAI; save(); } catch (e) { iErr = e.message; } iBusy = false; rerender(); };
         const c = $("#icp"); if (c) c.onclick = () => copy([iAI.headline, ...iAI.lines.map(l => "- " + l), "※ " + iAI.caution].join("\n"));
+        const yb = $("#ytgo"); if (yb) yb.onclick = async () => { EXT.ytBusy = true; EXT.ytErr = ""; rerender(); for (const b of marketDiff().up.slice(0, 5).map(m => m.b)) { try { const r = await fetch("api/data/youtube?q=" + encodeURIComponent(b)); const j = await r.json(); if (!r.ok) throw new Error(j.error); EXT.yt[b] = j; } catch (e) { EXT.ytErr = e.message; break; } } EXT.ytBusy = false; rerender(); };
         return;
       }
       const top = D3.scores.slice(0, 8).map(x => x[0]);
       chart("ic1", { type: "line", data: { labels: ["11/11", "11/12", "11/13"], datasets: top.slice(0, 6).map((b, i) => ({ label: b, data: [scoreOf(D1, b), scoreOf(D2, b), scoreOf(D3, b)].map(s => s ? s.score : null), borderColor: PAL[i], backgroundColor: PAL[i], borderWidth: 2, pointRadius: 3, spanGaps: true })) }, options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } } }, scales: { y: { title: { display: true, text: "브랜드 점수 Σ(101−순위)" } } } } });
       const evc = {}; EVENTS.forEach(e => { const t = evType(e); evc[t] = (evc[t] || 0) + 1; }); const ek = Object.keys(evc).sort((a, b) => evc[b] - evc[a]);
+      macroCharts();
       chart("ic2", { type: "bar", data: { labels: ek, datasets: [{ data: ek.map(k => evc[k]), backgroundColor: "#151515", borderRadius: 4 }] }, options: { indexAxis: "y", maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.raw}개` } } } } });
     }
 
+
+    /* =======================================================================
+       ⑤ API 연결 상태 (실시간) — 무료 API + OpenAI
+       키는 .env 에만. 서버가 요청할 때마다 .env 를 다시 읽으므로 저장 후 1분 안에 반영(재시작 불필요).
+       ======================================================================= */
+    const APIS = [
+      { id: "openmeteo", side: "browser", name: "Open-Meteo 날씨", org: "Open-Meteo", env: "키 없음", free: "무료 · 가입 없음", use: "아침 체크 날씨 규칙 · 콘텐츠 날씨 근거 (14일)", url: "https://open-meteo.com/", steps: "가입 없이 바로 사용", test: "https://api.open-meteo.com/v1/forecast?latitude=37.5665&longitude=126.978&daily=temperature_2m_min&forecast_days=1&timezone=Asia%2FSeoul" },
+      { id: "nager", side: "browser", name: "Nager.Date 공휴일", org: "Nager.Date", env: "키 없음", free: "무료 · 가입 없음", use: "공휴일 · 기획전 일정 (H1 규칙)", url: "https://date.nager.at/", steps: "가입 없이 바로 사용", test: "https://date.nager.at/api/v3/IsTodayPublicHoliday/KR" },
+      { id: "kma", side: "server", name: "기상청 단기예보", org: "공공데이터포털", env: "DATA_GO_KR_KEY", free: "무료 · 개발계정 일일 트래픽 한도 안에서", use: "앞 3일 서울 최저 · 최고 기온 · 강수확률을 기상청 예보로 교체", url: "https://www.data.go.kr/data/15084084/openapi.do", steps: "공공데이터포털 회원가입 → 이 페이지에서 '활용신청' → 마이페이지 › 개발계정 › 일반 인증키 복사 (승인은 보통 바로, 키 동작까지 1~2시간 걸릴 수 있음)" },
+      { id: "kasi", side: "server", name: "특일 정보 (공휴일 · 대체공휴일)", org: "한국천문연구원 · 공공데이터포털", env: "DATA_GO_KR_KEY (같은 키)", free: "무료", use: "공휴일을 정부 공식 데이터로 (대체 · 임시공휴일 포함)", url: "https://www.data.go.kr/data/15012690/openapi.do", steps: "같은 공공데이터포털 계정으로 '활용신청'만 추가 — 키는 기상청과 같음" },
+      { id: "ecos", side: "server", name: "소비자물가 · 의류 및 신발", org: "한국은행 ECOS", env: "ECOS_API_KEY (없으면 sample)", free: "무료 · 키 없이도 sample 키로 한 번에 10행", use: "시장 변화 › 의류 · 여자의류 · 신발 물가 상승률", url: "https://ecos.bok.or.kr/api/", steps: "ECOS Open API 회원가입 → 인증키 신청 (바로 발급)" },
+      { id: "kosis", side: "server", name: "온라인쇼핑 상품군별 거래액", org: "KOSIS 국가통계포털", env: "KOSIS_API_KEY", free: "무료", use: "시장 변화 › 의복 · 신발 · 가방 · 패션용품 온라인 거래액 추이", url: "https://kosis.kr/openapi/", steps: "KOSIS 회원가입 → 공유서비스 › 활용신청 → 인증키 발급" },
+      { id: "youtube", side: "server", name: "YouTube Data API v3", org: "Google Cloud", env: "YOUTUBE_API_KEY", free: "무료 · 하루 10,000 units (검색 1회 100 units)", use: "주간 리뷰 › 급등 브랜드의 최근 7일 코디 영상", url: "https://console.cloud.google.com/apis/library/youtube.googleapis.com", steps: "프로젝트 만들기 → YouTube Data API v3 '사용' → 사용자 인증 정보 › API 키 만들기 → 키 제한을 YouTube Data API v3로" },
+      { id: "openai", side: "server", name: "OpenAI", org: "OpenAI", env: "OPENAI_API_KEY", free: "유료 · 사용량 과금 (보유 중)", use: "콘텐츠 3안 · 표현 2차 검토 · 성과 제안 · 인사이트 요약", url: "https://platform.openai.com/api-keys", steps: "API keys › Create new secret key → .env 에 붙여 넣기" }
+    ];
+    const ST = { at: null, server: null, items: {}, busy: false };
+    const STL = { ok: ["ok", "연결됨"], nokey: ["key", "키 필요"], error: ["err", "오류"], off: ["off", "로컬 서버에서 확인"], wait: ["wait", "확인 중"] };
+    const now = () => new Date().toLocaleTimeString("ko-KR", { hour12: false });
+    const tfetch = (u, o = {}, ms = 8000) => { const c = new AbortController(), t = setTimeout(() => c.abort(), ms); return fetch(u, { ...o, signal: c.signal }).finally(() => clearTimeout(t)); };
+    async function pollStatus(force) {
+      if (ST.busy) return; ST.busy = true; chip();
+      const browser = Promise.all(APIS.filter(a => a.side === "browser").map(async a => { const t0 = performance.now(); try { const r = await tfetch(a.test, { cache: "no-store" }); ST.items[a.id] = r.ok ? { state: "ok", ms: Math.round(performance.now() - t0), msg: "브라우저에서 직접 호출", at: now() } : { state: "error", ms: Math.round(performance.now() - t0), msg: "HTTP " + r.status, at: now() }; } catch (e) { ST.items[a.id] = { state: "error", ms: null, msg: e.name === "AbortError" ? "8초 안에 응답 없음" : "연결 실패 (인터넷 · 차단 확인)", at: now() }; } chip(); }));
+      const server = (async () => {
+        if (AI.server) { try { const r = await tfetch("api/status" + (force ? "?force=1" : ""), { cache: "no-store" }, 20000); const j = await r.json(); Object.assign(ST.items, j.checks); ST.server = true; } catch (e) { ST.server = false; APIS.filter(a => a.side === "server").forEach(a => ST.items[a.id] = { state: "error", ms: null, msg: "로컬 서버 응답 없음", at: now() }); } }
+        else { ST.server = false; APIS.filter(a => a.side === "server").forEach(a => ST.items[a.id] = { state: "off", ms: null, msg: "공유용 페이지에는 서버가 없어요 · 로컬에서 server.py 로 열면 확인", at: now() }); }
+        chip();
+      })();
+      await Promise.all([browser, server]);
+      ST.at = now(); ST.busy = false; chip();
+      if (location.hash === "#sources") rerender();
+      await pullData();
+    }
+    function chip() {
+      const tb = document.querySelector(".topbar"); if (!tb) return;
+      let c = document.getElementById("apichip");
+      if (!c) { c = document.createElement("button"); c.id = "apichip"; c.className = "chip apichip"; c.title = "API 연결 상태"; c.onclick = () => { location.hash = "sources"; }; const first = tb.querySelector(".chip"); tb.insertBefore(c, first); }
+      const vals = APIS.map(a => (ST.items[a.id] || {}).state), ok = vals.filter(v => v === "ok").length, bad = vals.filter(v => v === "error").length;
+      c.innerHTML = `<span class="dot ${bad ? "err" : ok === APIS.length ? "ok" : "key"}"></span>API ${ok}/${APIS.length}`;
+    }
+    // 연결된 API 데이터를 화면에 반영
+    const EXT = { ecos: S.ecos ? { ...S.ecos, snap: true } : null, kosis: null, yt: {}, ytBusy: false, ytErr: "" };
+    async function pullData() {
+      const st = id => (ST.items[id] || {}).state === "ok";
+      let changed = false;
+      if (st("kma") && !API.kma) { try { const r = await fetch("api/data/kma"); if (r.ok) { const j = await r.json(), d = API.weather.daily; j.days.forEach(k => { const i = d.time.indexOf(k.date); if (i >= 0) { if (k.min != null) d.temperature_2m_min[i] = Math.round(k.min); if (k.max != null) d.temperature_2m_max[i] = Math.round(k.max); d.precipitation_probability_max[i] = k.rain; } }); API.kma = j.base.slice(4, 6) + "/" + j.base.slice(6, 8) + " " + j.base.slice(9, 11) + "시 발표"; changed = true; } } catch (e) { } }
+      if (st("kasi") && !API.kasi) { try { const y = new Date().getFullYear(), out = []; for (const yr of [y, y + 1]) { const r = await fetch("api/data/holidays?year=" + yr); if (r.ok) (await r.json()).items.forEach(h => out.push(h)); } if (out.length) { API.holidays = out; API.kasi = true; changed = true; } } catch (e) { } }
+      if (st("ecos") && (!EXT.ecos || EXT.ecos.snap)) { try { const r = await fetch("api/data/ecos"); if (r.ok) { EXT.ecos = await r.json(); EXT.ecos.fetchedAt = now(); changed = true; } } catch (e) { } }
+      if (st("kosis") && !EXT.kosis) { try { const r = await fetch("api/data/kosis"); const j = await r.json(); EXT.kosis = r.ok ? j : { error: j.error }; changed = true; } catch (e) { } }
+      if (changed) refreshLive();
+    }
+    setInterval(() => pollStatus(), 60000);
+    hooks.sourcesHead = () => {
+      const c = k => APIS.filter(a => (ST.items[a.id] || {}).state === k).length;
+      return `<div class="ph"><h2>API 연결</h2><div class="when">60초마다 자동 확인 · 마지막 ${ST.at || "—"} <button class="btn ghost sm" id="apire" ${ST.busy ? "disabled" : ""}>${ST.busy ? "확인 중…" : "지금 확인"}</button></div></div>
+      <p class="lead">무료 API만 썼어요(OpenAI만 유료). 키는 대시보드 폴더의 <code>.env</code>에 넣고, 서버가 요청할 때마다 다시 읽어서 <b>저장하면 1분 안에 자동으로 연결돼요</b> (서버 재시작 필요 없음). 키는 브라우저 · 채팅에 붙여 넣지 마세요.</p>
+      <div class="grid g4">${[["연결됨", c("ok"), "ok"], ["키 필요", c("nokey"), "key"], ["오류", c("error"), "err"], ["로컬 서버", ST.server ? "켜짐" : "꺼짐", ST.server ? "ok" : "off"]].map(([k, v, cl]) => `<div class="kpi"><div class="k"><i class="dot ${cl}"></i> ${k}</div><div class="v">${v}${typeof v === "number" ? "<small>개</small>" : ""}</div></div>`).join("")}</div>
+      <div class="apis">${APIS.map(a => { const it = ST.items[a.id] || { state: "wait" }, L = STL[it.state] || STL.wait; return `<div class="card api"><div class="apih"><i class="dot ${L[0]}"></i><b>${esc(a.name)}</b><span class="cap">${esc(a.org)}</span><span class="t ${{ ok: "green", key: "blue", err: "red", off: "ref", wait: "ref" }[L[0]]}" style="margin-left:auto">${L[1]}</span></div>
+        <div class="apim">${it.ms != null ? `<b>${fmt(it.ms)}ms</b> · ` : ""}${esc(it.msg || "")}${it.at ? ` · ${esc(it.at)}` : ""}</div>
+        <dl><dt>쓰는 곳</dt><dd>${esc(a.use)}</dd><dt>요금</dt><dd>${esc(a.free)}</dd><dt>.env</dt><dd><code>${esc(a.env)}</code></dd><dt>발급</dt><dd>${esc(a.steps)}</dd></dl>
+        <a class="btn ${it.state === "ok" ? "ghost" : ""} sm" href="${a.url}" target="_blank" rel="noopener">${a.env === "키 없음" ? "사이트 보기" : it.state === "ok" ? "관리 페이지" : "키 발급 사이트 열기"} ↗</a></div>`; }).join("")}</div>
+      <div class="note" style="margin-bottom:26px"><b>.env 예시</b> (대시보드 폴더 · <code>.env.example</code> 복사)<pre class="copy" style="margin-top:6px">OPENAI_API_KEY=sk-...\nDATA_GO_KR_KEY=공공데이터포털_일반인증키\nECOS_API_KEY=한국은행_인증키\nKOSIS_API_KEY=KOSIS_인증키\nYOUTUBE_API_KEY=AIza...</pre>네이버 데이터랩 · 쇼핑 API는 2026년 7월부터 네이버 클라우드 종량제로 바뀌어 '무료만' 조건에 맞지 않아 넣지 않았어요.</div>`;
+    };
+    hooks.sourcesBind = () => { const b = $("#apire"); if (b) b.onclick = async () => { b.disabled = true; b.textContent = "확인 중…"; await pollStatus(true); rerender(); }; };
+
+    /* 시장 거시 지표 (ECOS · KOSIS) · 유튜브 반응 — 시장 인사이트에 붙임 */
+    function macroHtml() {
+      const e = EXT.ecos, k = EXT.kosis, ks = (ST.items.kosis || {}).state;
+      const eLast = e && e.series && e.series["의류 및 신발"] ? e.series["의류 및 신발"].slice(-1)[0] : null;
+      const ecard = e ? `<div class="card"><h4>의류 · 신발 소비자물가 (전년 같은 달 대비) ${e.snap ? src("api", "한국은행 ECOS · " + e.fetchedAt + " 스냅샷") : src("live", "한국은행 ECOS")}</h4><p class="cap">${eLast ? `${eLast.m.slice(0, 4)}년 ${+eLast.m.slice(4)}월 의류 및 신발 ${eLast.yoy > 0 ? "+" : ""}${eLast.yoy}%` : ""} · 2020=100 지수의 전년 동월비${e.sample ? " · sample 키" : ""}</p><div class="chart" style="height:220px"><canvas id="ic3"></canvas></div><p class="cap" style="margin-top:6px">물가가 오르면 같은 판매량에서도 거래액이 커져요 → 거래액 증감을 볼 때 물가 상승분을 빼고 판단</p></div>`
+        : `<div class="card"><h4>의류 · 신발 소비자물가</h4><p class="cap">ECOS 데이터를 불러오지 못했어요.</p></div>`;
+      const kcard = k && k.series ? `<div class="card"><h4>온라인쇼핑 패션 상품군 거래액 ${src("live", "KOSIS " + k.tbl)}</h4><p class="cap">${esc(k.table)} · 단위 ${esc(k.unit)}</p><div class="chart" style="height:220px"><canvas id="ic4"></canvas></div>${table(["상품군", "#최근 월", "#전년 같은 달 대비"], Object.entries(k.series).map(([c, a]) => { const l = a[a.length - 1], p = a.find(x => x.m === String(+l.m.slice(0, 4) - 1) + l.m.slice(4)); return `<tr><td>${esc(c)}</td><td class="num">${fmt(l.v)}</td><td class="num ${p ? (l.v >= p.v ? "up" : "down") : ""}">${p ? sign(l.v / p.v - 1) : "—"}</td></tr>`; }))}</div>`
+        : `<div class="card"><h4>온라인쇼핑 패션 상품군 거래액</h4><p class="cap">${k && k.error ? "오류: " + esc(k.error) : ks === "off" ? "로컬 서버(server.py)에서 열면 KOSIS 키로 불러와요." : "KOSIS 키를 넣으면 의복 · 신발 · 가방 · 패션용품 월간 거래액이 여기에 나와요."}</p><a class="btn sm" href="#sources">API 연결 보기</a></div>`;
+      return `<div class="sec"><h3>시장 거시 지표</h3><span class="hint">무료 공공 API</span></div><div class="grid g2">${ecard}${kcard}</div>`;
+    }
+    function macroCharts() {
+      const e = EXT.ecos;
+      if (e && e.series && $("#ic3")) { const names = ["의류 및 신발", "여자의류", "신발", "총지수"].filter(n => e.series[n]); const lab = e.series[names[0]].map(p => p.m.slice(2, 4) + "." + p.m.slice(4)); chart("ic3", { type: "line", data: { labels: lab, datasets: names.map((n, i) => ({ label: n, data: e.series[n].map(p => p.yoy), borderColor: PAL[i], backgroundColor: PAL[i], borderWidth: n === "총지수" ? 1.5 : 2, borderDash: n === "총지수" ? [4, 3] : [], pointRadius: 2, tension: .3 })) }, options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } }, tooltip: { callbacks: { label: c => `${c.dataset.label} ${c.raw > 0 ? "+" : ""}${c.raw}%` } } }, scales: { y: { ticks: { callback: v => v + "%" } } } } }); }
+      const k = EXT.kosis;
+      if (k && k.series && $("#ic4")) { const cats = Object.keys(k.series), lab = k.series[cats[0]].map(p => p.m.slice(2, 4) + "." + p.m.slice(4)); chart("ic4", { type: "line", data: { labels: lab, datasets: cats.map((c, i) => ({ label: c, data: k.series[c].map(p => p.v), borderColor: PAL[i % PAL.length], backgroundColor: PAL[i % PAL.length], borderWidth: 2, pointRadius: 2, tension: .3 })) }, options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } } } } }); }
+    }
+    function ytHtml(brands) {
+      const s = (ST.items.youtube || {}).state;
+      const rows = brands.map(b => { const y = EXT.yt[b]; return y ? `<div class="yt"><b>${esc(b)}</b> <span class="cap">최근 7일 '${esc(b)} 코디' 영상 약 ${fmt(y.total || 0)}개</span><ul class="uf">${y.items.slice(0, 3).map(v => `<li><a href="https://www.youtube.com/watch?v=${esc(v.id)}" target="_blank" rel="noopener">${esc(v.title)}</a> <span class="cap">· ${esc(v.channel)} · ${esc(v.at)}</span></li>`).join("") || "<li>영상 없음</li>"}</ul></div>` : ""; }).join("");
+      return `<div class="card" style="margin-top:12px"><div style="display:flex;gap:8px;align-items:center"><h4 style="margin:0">급등 브랜드 유튜브 반응 ${s === "ok" ? src("live", "YouTube Data API") : ""}</h4><button class="btn ghost" id="ytgo" style="margin-left:auto" ${s === "ok" && !EXT.ytBusy ? "" : "disabled"}>${EXT.ytBusy ? "불러오는 중…" : `${brands.length}개 브랜드 불러오기 (${brands.length * 100} units)`}</button></div>
+        <p class="cap">${s === "ok" ? `순위가 급등한 브랜드(${brands.map(esc).join(", ")})의 최근 7일 코디 영상 — 인플루언서 협업 · 콘텐츠 소재 찾기. 결과는 12시간 저장해 같은 검색에 단위를 다시 쓰지 않아요.` : s === "off" ? "로컬 서버(server.py)에서 열면 YouTube 키로 불러와요." : "YouTube 키를 넣으면 쓸 수 있어요 (무료 · 하루 10,000 units)."}</p>${EXT.ytErr ? `<p class="note" style="color:var(--red)">${esc(EXT.ytErr)}</p>` : ""}${rows}</div>`;
+    }
     return [
       { id: "content", label: "콘텐츠 제작", time: "14:00", after: "voc", view: vContent, bind: afterContent },
       { id: "comply", label: "표현 검수", time: "14:30", after: "content", view: vComply, bind: afterComply },

@@ -186,3 +186,18 @@ pre.copy{white-space:pre-wrap;background:var(--soft);border-radius:12px;padding:
 }
 .field.fs{display:block}.field.fs>label{display:block;margin-bottom:6px}.field.fs .cap{margin:4px 0 0}
 .rule .t{align-self:start}
+
+/* API 연결 */
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--line-2);flex:none;vertical-align:middle}
+.dot.ok{background:#2fb465;box-shadow:0 0 0 3px rgba(47,180,101,.18);animation:pulse 2s infinite}.dot.key{background:var(--blue)}.dot.err{background:var(--red)}.dot.off,.dot.wait{background:var(--line-2)}
+@keyframes pulse{50%{box-shadow:0 0 0 5px rgba(47,180,101,.05)}}
+.chip.apichip{border:none;cursor:pointer;gap:7px;font:inherit;font-size:12.5px;font-weight:700}
+.apis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
+.card.api{display:flex;flex-direction:column;gap:8px}
+.apih{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.apih b{font-size:14px}
+.apim{font-size:12px;color:var(--ink-2);background:var(--soft);border-radius:10px;padding:7px 10px}
+.card.api dl{display:grid;grid-template-columns:62px 1fr;gap:4px 8px;margin:0;font-size:12.5px}
+.card.api dt{color:var(--mute)}.card.api dd{margin:0;color:var(--ink-2)}
+.card.api .btn{align-self:flex-start;text-decoration:none;margin-top:auto}
+.yt{padding:8px 0;border-top:1px solid var(--line)}.yt a{color:var(--ink)}
+@media (max-width:900px){.apis{grid-template-columns:1fr}}
